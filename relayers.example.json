@@ -1,0 +1,10 @@
+{
+  "domain.com": {
+    "host": "smtp.domain.com",
+    "port": 587
+  },
+  "example.com": {
+    "host": "smtp.example.com",
+    "port": 25
+  }
+}
