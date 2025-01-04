@@ -1,10 +1,14 @@
 {
   "domain.com": {
     "host": "smtp.domain.com",
+    "username": "username@domain.com",
+    "password": "psw",
     "port": 587
   },
   "example.com": {
     "host": "smtp.example.com",
+    "username": "username@example.com",
+    "password": "psw",
     "port": 25
   }
 }
