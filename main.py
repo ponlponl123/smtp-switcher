@@ -26,7 +26,7 @@ class CustomHandler:
         print(f"Failed to relay mail from {envelope.mail_from} to {relay_server['host']}: {e}")
     else:
       print(f"No relay server found for domain {sender_domain}")
-      
+
     return '250 Message accepted for delivery'
 
 class AuthHandler(SMTP):

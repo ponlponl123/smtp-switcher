@@ -1,0 +1,4 @@
+aiosmtpd==1.4.6
+atpublic==5.0
+secure-smtpd==3.0.0
+secure-smtplib==0.1.1
