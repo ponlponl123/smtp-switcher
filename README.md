@@ -5,7 +5,7 @@ this solution for who have more than one smtp endpoint server and mail server ca
 ## how to configure
 
 * `-p <number>` or `--port <number>`
-  the port of your smtp server
+  the port of your smtp server (default: 25)
 
 * `-a` or `--public`
   host smtp server on `0.0.0.0`
