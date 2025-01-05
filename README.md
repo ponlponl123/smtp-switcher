@@ -4,7 +4,11 @@ this solution for who have more than one smtp endpoint server and mail server ca
 
 ## how to configure
 
-currently is no any config file only have relayers.json
+* `-p <number>` or `--port <number>`
+  the port of your smtp server
+
+* `-a` or `--public`
+  host smtp server on `0.0.0.0`
 
 ## how to run
 

@@ -3,6 +3,14 @@ import json
 import smtplib
 from aiosmtpd.controller import Controller
 from aiosmtpd.smtp import Envelope, Session, SMTP
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("-p", "--port", help="port number", type=int)
+parser.add_argument("-a", "--public", help="public", action='store_true')
+args = parser.parse_args()
+port = args.port or 25
+public = args.public or False
 
 class CustomHandler:
   def __init__(self, relay_rules):
@@ -50,11 +58,17 @@ async def main():
   handler = CustomHandler(relay_rules)
   auth_handler = AuthHandler(handler)
 
-  controller = Controller(auth_handler, hostname='0.0.0.0', port=25, ready_timeout=30)
+  isPublic = ""
+  
+  if public:
+    controller = Controller(auth_handler, hostname='0.0.0.0', port=port, ready_timeout=30)
+    isPublic = "(public)"
+  else:
+    controller = Controller(auth_handler, hostname='localhost', port=port, ready_timeout=30)
 
   controller.start()
 
-  print("SMTP server started on port 25 with domain-based relaying and authentication...")
+  print(f"SMTP server started{isPublic} on port {port} with domain-based relaying and authentication...")
 
   await asyncio.Event().wait()
 

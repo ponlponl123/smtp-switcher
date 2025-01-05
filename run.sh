@@ -26,4 +26,4 @@ pip install -r requirements.txt
 printf "\n\n\n *** SMTP Switcher ***\n\n"
 
 echo "Starting SMTP Switcher server..."
-python main.py
+python main.py "$@"
