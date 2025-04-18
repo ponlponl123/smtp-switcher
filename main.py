@@ -2,6 +2,7 @@ import signal
 import asyncio
 import json
 import smtplib
+import logging
 from aiosmtpd.controller import Controller
 from aiosmtpd.smtp import Envelope, Session, SMTP
 import argparse
@@ -13,20 +14,31 @@ args = parser.parse_args()
 port = args.port or 25
 public = args.public or False
 
+logging.basicConfig(
+  level=logging.DEBUG,
+  format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
+logger = logging.getLogger("smtp-gateway")
+
 class CustomHandler:
   def __init__(self, relay_rules):
     self.relay_rules = relay_rules
 
   def get_relay_server(self, sender_domain):
+    logger.debug(f"Looking up relay for domain: {sender_domain}")
     return self.relay_rules.get(sender_domain)
 
   async def handle_DATA(self, server, session: Session, envelope: Envelope):
     sender_domain = envelope.mail_from.split('@')[-1]
     relay_server = self.get_relay_server(sender_domain)
 
-    print(f"Received email from: {envelope.mail_from}")
-    print(f"Recipients: {envelope.rcpt_tos}")
-    print(f"Message content:\n{envelope.content.decode('utf-8')}")
+    logger.debug("=== SMTP DATA RECEIVED ===")
+    logger.debug(f"MAIL FROM: {envelope.mail_from}")
+    logger.debug(f"RCPT TO: {envelope.rcpt_tos}")
+    logger.debug(f"Client IP: {session.peer}")
+    logger.debug(f"Message size: {len(envelope.content)} bytes")
+    logger.debug("Raw message:")
+    logger.debug(envelope.content.decode(errors='ignore'))
 
     if relay_server:
       try:
@@ -48,17 +60,23 @@ class CustomHandler:
       print(f"No relay server found for domain {sender_domain}")
       return '550 No relay server found'
 
+  async def handle_MAIL(self, server, session, envelope, address, mail_options):
+    logger.debug(f"MAIL FROM: {address}")
+    envelope.mail_from = address
+    return '250 OK'
+
+  async def handle_RCPT(self, server, session, envelope, address, rcpt_options):
+      logger.debug(f"RCPT TO: {address}")
+      envelope.rcpt_tos.append(address)
+      return '250 OK'
+
 class AuthHandler(SMTP):
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
     self.authenticated = False
 
   async def handle_AUTH(self, arg):
-    if arg == "username password":  # Replace with actual credentials or logic
-      self.authenticated = True
-      return '235 Authentication successful'
-    else:
-      return '535 Authentication credentials invalid'
+    logger.debug(f"AUTH command received with arg: {arg}")
 
 async def main():
   print("Starting SMTP server...")
@@ -76,10 +94,10 @@ async def main():
   auth_handler = AuthHandler(handler)
 
   if public:
-    controller = Controller(auth_handler, hostname='0.0.0.0', port=port, debug=True)
+    controller = Controller(auth_handler, hostname='0.0.0.0', port=port)
     print(f"SMTP server started (public) on port {port}...")
   else:
-    controller = Controller(auth_handler, hostname='localhost', port=port, debug=True)
+    controller = Controller(auth_handler, hostname='localhost', port=port)
     print(f"SMTP server started on port {port}...")
 
   controller.start()
