@@ -1,4 +1,4 @@
-FROM 3.14.0a7-alpine3.21
+FROM python:3.14.0a7-alpine3.21
 WORKDIR /smtp-gateway
 COPY . .
 RUN pip install -r ./requiirements.txt
