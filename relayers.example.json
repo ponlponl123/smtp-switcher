@@ -1,14 +1,18 @@
 {
   "domain.com": {
+    "helo_hostname": "mail.domain.com",
     "host": "smtp.domain.com",
     "username": "username@domain.com",
     "password": "psw",
+    "tls": true,
     "port": 587
   },
   "example.com": {
+    "helo_hostname": "mail.example.com",
     "host": "smtp.example.com",
     "username": "username@example.com",
     "password": "psw",
+    "tls": false,
     "port": 25
   }
 }

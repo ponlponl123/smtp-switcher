@@ -1,4 +1,5 @@
 relayers.json
-cert.pem
-key.pem
+*.pem
+*.crt
+*.cert
 venv

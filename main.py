@@ -17,7 +17,7 @@ class CustomHandler:
     self.relay_rules = relay_rules
 
   def get_relay_server(self, sender_domain):
-    return self.relay_rules.get(sender_domain, None)
+    return self.relay_rules.get(sender_domain)
 
   async def handle_DATA(self, server, session: Session, envelope: Envelope):
     sender_domain = envelope.mail_from.split('@')[-1]
@@ -26,8 +26,13 @@ class CustomHandler:
     if relay_server:
       try:
         with smtplib.SMTP(relay_server["host"], relay_server["port"]) as relay:
-          relay.starttls()
-          relay.login(relay_server["username"], relay_server["password"])
+          if "helo_hostname" in relay_server:
+            relay.helo(relay_server["helo_hostname"])
+            relay.ehlo(relay_server["helo_hostname"])
+          if relay_server.get("tls", False):
+            relay.starttls()
+          if "username" in relay_server and "password" in relay_server:
+            relay.login(relay_server["username"], relay_server["password"])
           relay.sendmail(envelope.mail_from, envelope.rcpt_tos, envelope.content)
         print(f"Relayed mail from {envelope.mail_from} to {relay_server['host']}")
       except Exception as e:
@@ -43,32 +48,34 @@ class AuthHandler(SMTP):
     self.authenticated = False
 
   async def handle_AUTH(self, arg):
-    if arg == "username password":
+    if arg == "username password":  # Replace with actual credentials or logic
       self.authenticated = True
       return '235 Authentication successful'
     else:
       return '535 Authentication credentials invalid'
 
 async def main():
-  with open('relayers.json', 'r') as f:
-    relay_rules = json.load(f)
-
-  loop = asyncio.get_event_loop()
+  try:
+    with open('relayers.json', 'r', encoding='utf-8') as f:
+      relay_rules = json.load(f)
+  except FileNotFoundError:
+    print("Error: 'relayers.json' file not found.")
+    return
+  except json.JSONDecodeError:
+    print("Error: Failed to parse 'relayers.json'. Ensure it is valid JSON.")
+    return
 
   handler = CustomHandler(relay_rules)
   auth_handler = AuthHandler(handler)
 
-  isPublic = ""
-  
   if public:
     controller = Controller(auth_handler, hostname='0.0.0.0', port=port, ready_timeout=30)
-    isPublic = "(public)"
+    print(f"SMTP server started (public) on port {port}...")
   else:
     controller = Controller(auth_handler, hostname='localhost', port=port, ready_timeout=30)
+    print(f"SMTP server started on port {port}...")
 
   controller.start()
-
-  print(f"SMTP server started{isPublic} on port {port} with domain-based relaying and authentication...")
 
   await asyncio.Event().wait()
 

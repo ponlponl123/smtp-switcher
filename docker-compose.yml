@@ -1,0 +1,7 @@
+services:
+  smtp-gateway:
+    build: .
+    ports:
+      - "25:25"
+    volumes:
+      - "./relayers.json:/smtp-gateway/relayers.json:ro"
