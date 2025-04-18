@@ -1,6 +1,8 @@
-FROM python:3.14.0a7-alpine3.21
+FROM python:3.13.3-alpine
 WORKDIR /smtp-gateway
 COPY . .
-RUN pip install -r ./requirements.txt
+RUN python -m venv venv && \
+    . ./venv/bin/activate && \
+    pip install --no-cache-dir -r ./requirements.txt
 EXPOSE 25
-CMD [ "python", "main.py" ]
+CMD ["/smtp-gateway/venv/bin/python", "-u", "main.py", "-p", "25", "-a"]

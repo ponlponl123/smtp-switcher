@@ -1,6 +1,7 @@
 services:
   smtp-gateway:
-    build: .
+    build:
+      context: .
     ports:
       - "25:25"
     volumes:

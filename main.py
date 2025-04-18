@@ -1,3 +1,4 @@
+import signal
 import asyncio
 import json
 import smtplib
@@ -55,6 +56,7 @@ class AuthHandler(SMTP):
       return '535 Authentication credentials invalid'
 
 async def main():
+  print("Starting SMTP server...")
   try:
     with open('relayers.json', 'r', encoding='utf-8') as f:
       relay_rules = json.load(f)
@@ -69,15 +71,27 @@ async def main():
   auth_handler = AuthHandler(handler)
 
   if public:
-    controller = Controller(auth_handler, hostname='0.0.0.0', port=port, ready_timeout=30)
+    controller = Controller(auth_handler, hostname='0.0.0.0', port=port)
     print(f"SMTP server started (public) on port {port}...")
   else:
-    controller = Controller(auth_handler, hostname='localhost', port=port, ready_timeout=30)
+    controller = Controller(auth_handler, hostname='localhost', port=port)
     print(f"SMTP server started on port {port}...")
 
   controller.start()
 
-  await asyncio.Event().wait()
+  # Setup graceful shutdown
+  loop = asyncio.get_running_loop()
+  stop_event = asyncio.Event()
+
+  def shutdown():
+    print("Shutting down...")
+    stop_event.set()
+
+  loop.add_signal_handler(signal.SIGINT, shutdown)
+  loop.add_signal_handler(signal.SIGTERM, shutdown)
+
+  await stop_event.wait()
+  controller.stop()
 
 if __name__ == '__main__':
   asyncio.run(main())
