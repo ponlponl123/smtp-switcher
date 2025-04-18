@@ -24,6 +24,10 @@ class CustomHandler:
     sender_domain = envelope.mail_from.split('@')[-1]
     relay_server = self.get_relay_server(sender_domain)
 
+    print(f"Received email from: {envelope.mail_from}")
+    print(f"Recipients: {envelope.rcpt_tos}")
+    print(f"Message content:\n{envelope.content.decode('utf-8')}")
+
     if relay_server:
       try:
         with smtplib.SMTP(relay_server["host"], relay_server["port"]) as relay:
@@ -36,12 +40,13 @@ class CustomHandler:
             relay.login(relay_server["username"], relay_server["password"])
           relay.sendmail(envelope.mail_from, envelope.rcpt_tos, envelope.content)
         print(f"Relayed mail from {envelope.mail_from} to {relay_server['host']}")
+        return '250 Message accepted for delivery'
       except Exception as e:
         print(f"Failed to relay mail from {envelope.mail_from} to {relay_server['host']}: {e}")
+        return '554 Relay server error'
     else:
       print(f"No relay server found for domain {sender_domain}")
-
-    return '250 Message accepted for delivery'
+      return '550 No relay server found'
 
 class AuthHandler(SMTP):
   def __init__(self, *args, **kwargs):
@@ -71,10 +76,10 @@ async def main():
   auth_handler = AuthHandler(handler)
 
   if public:
-    controller = Controller(auth_handler, hostname='0.0.0.0', port=port)
+    controller = Controller(auth_handler, hostname='0.0.0.0', port=port, debug=True)
     print(f"SMTP server started (public) on port {port}...")
   else:
-    controller = Controller(auth_handler, hostname='localhost', port=port)
+    controller = Controller(auth_handler, hostname='localhost', port=port, debug=True)
     print(f"SMTP server started on port {port}...")
 
   controller.start()
