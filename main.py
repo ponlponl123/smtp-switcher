@@ -53,9 +53,33 @@ class CustomHandler:
           relay.sendmail(envelope.mail_from, envelope.rcpt_tos, envelope.content)
         print(f"Relayed mail from {envelope.mail_from} to {relay_server['host']}")
         return '250 Message accepted for delivery'
+      except smtplib.SMTPException as e:
+        print(f"Failed to connect to relay server: {e}")
+        return '554 Relay server error (SMTP exception)'
+      except ConnectionRefusedError:
+        print(f"Failed to connect to relay server: Connection refused")
+        return '554 Relay server error (Connection refused)'
+      except TimeoutError:
+        print(f"Failed to connect to relay server: Timeout")
+        return '554 Relay server error (Timeout)'
+      except smtplib.SMTPServerDisconnected:
+        print(f"Failed to connect to relay server: Server disconnected")
+        return '554 Relay server error (Server disconnected)'
+      except smtplib.SMTPAuthenticationError:
+        print(f"Failed to authenticate to relay server")
+        return '554 Relay server error (Authentication failed)'
+      except smtplib.SMTPSenderRefused:
+        print(f"Failed to send mail from {envelope.mail_from}")
+        return '554 Relay server error (Sender refused)'
+      except smtplib.SMTPRecipientsRefused:
+        print(f"Failed to send mail to {envelope.rcpt_tos}")
+        return '554 Relay server error (Recipient refused)'
+      except smtplib.SMTPDataError:
+        print(f"Failed to send mail data")
+        return '554 Relay server error (Data error)'
       except Exception as e:
         print(f"Failed to relay mail from {envelope.mail_from} to {relay_server['host']}: {e}")
-        return '554 Relay server error'
+        return '554 Relay server error (Unknown)'
     else:
       print(f"No relay server found for domain {sender_domain}")
       return '550 No relay server found'
