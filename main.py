@@ -44,74 +44,33 @@ class CustomHandler:
     logger.debug("Raw message:")
     logger.debug(envelope.content.decode(errors='ignore'))
 
-    if relay_server:
-      try:
-        with smtplib.SMTP(relay_server["host"], relay_server["port"]) as relay:
-          relay.set_debuglevel(1)
-          logger.debug(f"Connecting to relay server: {relay_server['host']}:{relay_server['port']}")
-          relay.connect(relay_server["host"], relay_server["port"])
-          logger.debug("Connected to relay server")
-          if "helo_hostname" in relay_server:
-            relay.helo(relay_server["helo_hostname"])
-            relay.ehlo(relay_server["helo_hostname"])
-          if relay_server.get("tls", False):
-            relay.starttls()
-          if "username" in relay_server and "password" in relay_server:
-            try:
-              relay.login(relay_server["username"], relay_server["password"])
-            except smtplib.SMTPAuthenticationError:
-              print("Failed to authenticate to relay server")
-              return '554 Relay server error (Authentication failed)'
-            except smtplib.SMTPHeloError as e:
-              print(f"Failed to login to relay server: {e}")
-              return '554 Relay server error (Helo failed)'
-            except smtplib.SMTPNotSupportedError as e:
-              print(f"Failed to login to relay server: {e}")
-              return '554 Relay server error (Login failed)'
-            except smtplib.SMTPException as e:
-              print(f"Failed to login to relay server: {e}")
-              return '554 Relay server error (Login failed)'
-          try:
-            relay.sendmail(envelope.mail_from, envelope.rcpt_tos, envelope.content)
-          except smtplib.SMTPHeloError as e:
-            print(f"Failed to send mail to relay server: {e}")
-            return '554 Relay server error (Helo failed)'
-          except smtplib.SMTPRecipientsRefused as e:
-            print(f"Failed to send mail to relay server: {e}")
-            return '554 Relay server error (Recipient refused)'
-          except smtplib.SMTPSenderRefused as e:
-            print(f"Failed to send mail to relay server: {e}")
-            return '554 Relay server error (Sender refused)'
-          except smtplib.SMTPDataError as e:
-            print(f"Failed to send mail to relay server: {e}")
-            return '554 Relay server error (Data error)'
-          except smtplib.SMTPException as e:
-            print(f"Failed to send mail to relay server: {e}")
-            return '554 Relay server error (SMTP exception)'
-          except ConnectionRefusedError:
-            return '554 Relay server error (Connection refused)'
-          except TimeoutError:
-            return '554 Relay server error (Timeout)'
-          except Exception as e:
-            print(f"Failed to send mail to relay server: {e}")
-            return '554 Relay server error (Unknown)'
-        print(f"Relayed mail from {envelope.mail_from} to {relay_server['host']}")
+    if not relay_server:
+      return '554 No relay rule for this sender'
+
+    try:
+      with smtplib.SMTP(relay_server["host"], relay_server["port"]) as relay:
+        relay.set_debuglevel(1)
+        relay.connect(relay_server["host"], relay_server["port"])
+
+        if "helo_hostname" in relay_server:
+          relay.helo(relay_server["helo_hostname"])
+          relay.ehlo(relay_server["helo_hostname"])
+
+        if relay_server.get("tls", False):
+          relay.starttls()
+
+        if "username" in relay_server and "password" in relay_server:
+          relay.login(relay_server["username"], relay_server["password"])
+
+        relay.sendmail(envelope.mail_from, envelope.rcpt_tos, envelope.content)
         return '250 Message accepted for delivery'
-      except smtplib.SMTPException as e:
-        print(f"Failed to connect to relay server: {e}")
-        return '554 Relay server error (SMTP exception)'
-      except ConnectionRefusedError:
-        print(f"Failed to connect to relay server: Connection refused")
-        return '554 Relay server error (Connection refused)'
-      except TimeoutError:
-        print(f"Failed to connect to relay server: Timeout")
-        return '554 Relay server error (Timeout)'
-      except Exception as e:
-        print(f"Failed to relay mail from {envelope.mail_from} to {relay_server['host']}: {e}")
-        return '554 Relay server error (Unknown)'
-    else:
-      print(f"No relay server found for domain {sender_domain}")
-      return '550 No relay server found'
+
+    except smtplib.SMTPAuthenticationError:
+      logger.error("Authentication failed")
+      return '554 Relay server error (Authentication failed)'
+    except smtplib.SMTPException as e:
+      logger.error(f"SMTP error: {e}")
+      return f'554 Relay server error ({e})'
 
   async def handle_MAIL(self, server, session, envelope, address, mail_options):
     logger.debug(f"MAIL FROM: {address}")
