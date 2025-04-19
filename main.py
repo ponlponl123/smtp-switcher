@@ -25,63 +25,97 @@ logging.basicConfig(
 logger = logging.getLogger("smtp-gateway")
 
 class CustomHandler:
-  def __init__(self, relay_rules):
-    self.relay_rules = relay_rules
+  def __init__(self):
+    self.relay_rules = {}
+    self.load_relay_rules()
+
+  def load_relay_rules(self):
+    try:
+      with open('relayers.json', 'r', encoding='utf-8') as f:
+        self.relay_rules = json.load(f)
+      return True
+    except FileNotFoundError:
+      print("Error: 'relayers.json' file not found.")
+      return False
+    except json.JSONDecodeError:
+      print("Error: Failed to parse 'relayers.json'. Ensure it is valid JSON.")
+      return False
 
   def get_relay_server(self, sender_domain):
     logger.debug(f"Looking up relay for domain: {sender_domain}")
+    if not self.load_relay_rules():
+      return '550 Failed to load relay rules'
     return self.relay_rules.get(sender_domain)
 
-  async def handle_DATA(self, server, session: Session, envelope: Envelope):
+  async def handle_DATA(self, server, session, envelope):
+    try:
+      refused = self._deliver(envelope)
+    except smtplib.SMTPRecipientsRefused as e:
+      logging.info('Got SMTPRecipientsRefused: %s', e)
+      return "553 Recipients refused"
+    except smtplib.SMTPResponseException as e:
+      return "{} {}".format(e.smtp_code, e.smtp_error)
+    else:
+      if refused:
+        logging.info('Recipients refused: %s', refused)
+      return '250 OK'
+
+  def _deliver(self, envelope: Envelope):
+    logger.debug("handle_DATA method invoked")
     sender_domain = envelope.mail_from.split('@')[-1]
     relay_server = self.get_relay_server(sender_domain)
 
     logger.debug("=== SMTP DATA RECEIVED ===")
     logger.debug(f"MAIL FROM: {envelope.mail_from}")
     logger.debug(f"RCPT TO: {envelope.rcpt_tos}")
-    logger.debug(f"Client IP: {session.peer}")
     logger.debug(f"Message size: {len(envelope.content)} bytes")
     logger.debug("Raw message:")
     logger.debug(envelope.content.decode(errors='ignore'))
 
     if not relay_server:
+      logger.debug("No relay rule found for sender domain")
       return '554 No relay rule for this sender'
 
+    host = relay_server.get("host")
+    port = relay_server.get("port", 25)
+    use_ssl = relay_server.get("ssl", False)
+    use_tls = relay_server.get("tls", False)
+
+    if not host or host.startswith("."):
+      logger.error(f"Invalid relay server host: {host}")
+      return '554 Invalid relay server host'
+
     try:
-      with smtplib.SMTP(relay_server["host"], relay_server["port"]) as relay:
-        relay.set_debuglevel(1)
-        relay.connect(relay_server["host"], relay_server["port"])
+      s = smtplib.SMTP_SSL(host, port) if use_ssl else smtplib.SMTP(host, port)
+      s.set_debuglevel(1)
 
-        if "helo_hostname" in relay_server:
-          relay.helo(relay_server["helo_hostname"])
-          relay.ehlo(relay_server["helo_hostname"])
+      if use_tls:
+        s.starttls()
 
-        if relay_server.get("tls", False):
-          relay.starttls()
+      if "helo_hostname" in relay_server:
+        helo = relay_server["helo_hostname"]
+        s.helo(helo)
+        s.ehlo(helo)
+      else:
+        s.ehlo()
 
-        if "username" in relay_server and "password" in relay_server:
-          relay.login(relay_server["username"], relay_server["password"])
+      if "username" in relay_server and "password" in relay_server:
+        s.login(relay_server["username"], relay_server["password"])
 
-        relay.sendmail(envelope.mail_from, envelope.rcpt_tos, envelope.content)
+      try:
+        s.sendmail(envelope.mail_from, envelope.rcpt_tos, envelope.content)
+        logger.debug("Message successfully relayed")
         return '250 Message accepted for delivery'
+      finally:
+        s.quit()
 
-    except smtplib.SMTPAuthenticationError:
-      logger.error("Authentication failed")
-      return '554 Relay server error (Authentication failed)'
-    except smtplib.SMTPException as e:
-      logger.error(f"SMTP error: {e}")
-      return f'554 Relay server error ({e})'
+    except (OSError, smtplib.SMTPException) as e:
+      logging.exception('got %s', e.__class__)
+      errcode = getattr(e, 'smtp_code', 554)
+      errmsg = getattr(e, 'smtp_error', e.__class__)
+      raise smtplib.SMTPResponseException(errcode, str(errmsg))
 
-  async def handle_MAIL(self, server, session, envelope, address, mail_options):
-    logger.debug(f"MAIL FROM: {address}")
-    envelope.mail_from = address
-    return '250 OK'
-
-  async def handle_RCPT(self, server, session, envelope, address, rcpt_options):
-      logger.debug(f"RCPT TO: {address}")
-      envelope.rcpt_tos.append(address)
-      return '250 OK'
-
+# WIP
 class AuthHandler(SMTP):
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
@@ -92,24 +126,14 @@ class AuthHandler(SMTP):
 
 async def main():
   print("Starting SMTP server...")
-  try:
-    with open('relayers.json', 'r', encoding='utf-8') as f:
-      relay_rules = json.load(f)
-  except FileNotFoundError:
-    print("Error: 'relayers.json' file not found.")
-    return
-  except json.JSONDecodeError:
-    print("Error: Failed to parse 'relayers.json'. Ensure it is valid JSON.")
-    return
-
-  handler = CustomHandler(relay_rules)
-  auth_handler = AuthHandler(handler)
+  handler = CustomHandler()
+  # auth_handler = AuthHandler(handler)
 
   if public:
-    controller = Controller(auth_handler, hostname='0.0.0.0', port=port)
+    controller = Controller(handler, hostname='0.0.0.0', port=port)
     print(f"SMTP server started (public) on port {port}...")
   else:
-    controller = Controller(auth_handler, hostname='localhost', port=port)
+    controller = Controller(handler, hostname='localhost', port=port)
     print(f"SMTP server started on port {port}...")
 
   controller.start()
