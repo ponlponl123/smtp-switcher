@@ -1,11 +1,15 @@
-import signal
+import platform
 import asyncio
+import signal
 import json
 import smtplib
 import logging
 from aiosmtpd.controller import Controller
 from aiosmtpd.smtp import Envelope, Session, SMTP
 import argparse
+
+if platform.system() == "Windows":
+  asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-p", "--port", help="port number", type=int)
@@ -49,8 +53,44 @@ class CustomHandler:
           if relay_server.get("tls", False):
             relay.starttls()
           if "username" in relay_server and "password" in relay_server:
-            relay.login(relay_server["username"], relay_server["password"])
-          relay.sendmail(envelope.mail_from, envelope.rcpt_tos, envelope.content)
+            try:
+              relay.login(relay_server["username"], relay_server["password"])
+            except smtplib.SMTPAuthenticationError:
+              print("Failed to authenticate to relay server")
+              return '554 Relay server error (Authentication failed)'
+            except smtplib.SMTPHeloError as e:
+              print(f"Failed to login to relay server: {e}")
+              return '554 Relay server error (Helo failed)'
+            except smtplib.SMTPNotSupportedError as e:
+              print(f"Failed to login to relay server: {e}")
+              return '554 Relay server error (Login failed)'
+            except smtplib.SMTPException as e:
+              print(f"Failed to login to relay server: {e}")
+              return '554 Relay server error (Login failed)'
+          try:
+            relay.sendmail(envelope.mail_from, envelope.rcpt_tos, envelope.content)
+          except smtplib.SMTPHeloError as e:
+            print(f"Failed to send mail to relay server: {e}")
+            return '554 Relay server error (Helo failed)'
+          except smtplib.SMTPRecipientsRefused as e:
+            print(f"Failed to send mail to relay server: {e}")
+            return '554 Relay server error (Recipient refused)'
+          except smtplib.SMTPSenderRefused as e:
+            print(f"Failed to send mail to relay server: {e}")
+            return '554 Relay server error (Sender refused)'
+          except smtplib.SMTPDataError as e:
+            print(f"Failed to send mail to relay server: {e}")
+            return '554 Relay server error (Data error)'
+          except smtplib.SMTPException as e:
+            print(f"Failed to send mail to relay server: {e}")
+            return '554 Relay server error (SMTP exception)'
+          except ConnectionRefusedError:
+            return '554 Relay server error (Connection refused)'
+          except TimeoutError:
+            return '554 Relay server error (Timeout)'
+          except Exception as e:
+            print(f"Failed to send mail to relay server: {e}")
+            return '554 Relay server error (Unknown)'
         print(f"Relayed mail from {envelope.mail_from} to {relay_server['host']}")
         return '250 Message accepted for delivery'
       except smtplib.SMTPException as e:
@@ -62,21 +102,6 @@ class CustomHandler:
       except TimeoutError:
         print(f"Failed to connect to relay server: Timeout")
         return '554 Relay server error (Timeout)'
-      except smtplib.SMTPServerDisconnected:
-        print(f"Failed to connect to relay server: Server disconnected")
-        return '554 Relay server error (Server disconnected)'
-      except smtplib.SMTPAuthenticationError:
-        print(f"Failed to authenticate to relay server")
-        return '554 Relay server error (Authentication failed)'
-      except smtplib.SMTPSenderRefused:
-        print(f"Failed to send mail from {envelope.mail_from}")
-        return '554 Relay server error (Sender refused)'
-      except smtplib.SMTPRecipientsRefused:
-        print(f"Failed to send mail to {envelope.rcpt_tos}")
-        return '554 Relay server error (Recipient refused)'
-      except smtplib.SMTPDataError:
-        print(f"Failed to send mail data")
-        return '554 Relay server error (Data error)'
       except Exception as e:
         print(f"Failed to relay mail from {envelope.mail_from} to {relay_server['host']}: {e}")
         return '554 Relay server error (Unknown)'
@@ -127,18 +152,25 @@ async def main():
   controller.start()
 
   # Setup graceful shutdown
-  loop = asyncio.get_running_loop()
   stop_event = asyncio.Event()
 
-  def shutdown():
+  async def shutdown():
     print("Shutting down...")
     stop_event.set()
 
-  loop.add_signal_handler(signal.SIGINT, shutdown)
-  loop.add_signal_handler(signal.SIGTERM, shutdown)
+  # Use a background task to wait for user input (Ctrl+C or Enter) to trigger shutdown
+  asyncio.create_task(wait_for_shutdown(shutdown))
 
   await stop_event.wait()
   controller.stop()
+
+async def wait_for_shutdown(shutdown_callback):
+  try:
+    # Wait for user input to trigger shutdown
+    await asyncio.to_thread(input, "Press Enter to stop the server...\n")
+  except (KeyboardInterrupt, EOFError):
+    pass
+  await shutdown_callback()
 
 if __name__ == '__main__':
   asyncio.run(main())
