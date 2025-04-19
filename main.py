@@ -47,6 +47,10 @@ class CustomHandler:
     if relay_server:
       try:
         with smtplib.SMTP(relay_server["host"], relay_server["port"]) as relay:
+          relay.set_debuglevel(1)
+          logger.debug(f"Connecting to relay server: {relay_server['host']}:{relay_server['port']}")
+          relay.connect(relay_server["host"], relay_server["port"])
+          logger.debug("Connected to relay server")
           if "helo_hostname" in relay_server:
             relay.helo(relay_server["helo_hostname"])
             relay.ehlo(relay_server["helo_hostname"])
