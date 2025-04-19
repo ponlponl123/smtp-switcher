@@ -154,23 +154,27 @@ async def main():
   # Setup graceful shutdown
   stop_event = asyncio.Event()
 
-  async def shutdown():
+  def shutdown():
     print("Shutting down...")
     stop_event.set()
 
-  # Use a background task to wait for user input (Ctrl+C or Enter) to trigger shutdown
-  asyncio.create_task(wait_for_shutdown(shutdown))
+  loop = asyncio.get_running_loop()
 
-  await stop_event.wait()
+  if platform.system() == "Windows":
+    # Windows: Handle KeyboardInterrupt for graceful shutdown
+    print("Running on Windows: Press Ctrl+C to stop the server.")
+    try:
+      while not stop_event.is_set():
+        await asyncio.sleep(1)  # Keep the loop running
+    except KeyboardInterrupt:
+      shutdown()
+  else:
+    # Non-Windows: Use signal handlers
+    loop.add_signal_handler(signal.SIGTERM, shutdown)
+    loop.add_signal_handler(signal.SIGINT, shutdown)
+    await stop_event.wait()
+
   controller.stop()
-
-async def wait_for_shutdown(shutdown_callback):
-  try:
-    # Wait for user input to trigger shutdown
-    await asyncio.to_thread(input, "Press Enter to stop the server...\n")
-  except (KeyboardInterrupt, EOFError):
-    pass
-  await shutdown_callback()
 
 if __name__ == '__main__':
   asyncio.run(main())
